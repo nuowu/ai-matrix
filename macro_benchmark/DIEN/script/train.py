@@ -24,6 +24,7 @@ best_auc = 0.0
 
 TOTAL_TRAIN_SIZE = 512000
 
+
 def prepare_data(input, target, maxlen = None, return_neg = False):
     # x: a list of sentences
     lengths_x = [len(s[4]) for s in input]
@@ -92,6 +93,7 @@ def prepare_data(input, target, maxlen = None, return_neg = False):
     else:
         return uids, mids, cats, mid_his, cat_his, mid_mask, numpy.array(target), numpy.array(lengths_x)
 
+
 def eval(sess, test_data, model, model_path):
     loss_sum = 0.
     accuracy_sum = 0.
@@ -115,7 +117,7 @@ def eval(sess, test_data, model, model_path):
         accuracy_sum += acc
         prob_1 = prob[:, 0].tolist()
         target_1 = target[:, 0].tolist()
-        for p ,t in zip(prob_1, target_1):
+        for p, t in zip(prob_1, target_1):
             stored_arr.append([p, t])
         # print("nums: ", nums)
         # break
@@ -130,6 +132,7 @@ def eval(sess, test_data, model, model_path):
             model.save(sess, model_path)
     return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums
 
+
 def train(
         train_file = "local_train_splitByUser",
         test_file = "local_test_splitByUser",
@@ -142,7 +145,7 @@ def train(
         save_iter = 100,
         model_type = 'DNN',
         data_type = 'FP32',
-	seed = 2,
+        seed = 2,
 ):
     print("batch_size: ", batch_size)
     print("model: ", model_type)
@@ -209,14 +212,14 @@ def train(
                 if (iter % test_iter) == 0:
                     # print("train_size: %d" % train_size)
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
-                    print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' % \
-                                          (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
+                    print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
+                          (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
                     print('                                                                                          test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
                     loss_sum = 0.0
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0
                 if (iter % save_iter) == 0:
-                    print('save model iter: %d' %(iter))
+                    print('save model iter: %d' % (iter))
                     model.save(sess, model_path+"--"+str(iter))
                 if train_size >= TOTAL_TRAIN_SIZE:
                     break
@@ -228,6 +231,7 @@ def train(
         print("Approximate accelerator time in seconds is %.3f" % approximate_accelerator_time)
         print("Approximate accelerator performance in recommendations/second is %.3f" % (float(TOTAL_TRAIN_SIZE)/float(approximate_accelerator_time)))
 
+
 def test(
         train_file = "local_train_splitByUser",
         test_file = "local_test_splitByUser",
@@ -238,7 +242,7 @@ def test(
         maxlen = 100,
         model_type = 'DNN',
         data_type = 'FP32',
-	    seed = 2
+        seed = 2
 ):
     print("batch_size: ", batch_size)
     print("model: ", model_type)
@@ -275,11 +279,11 @@ def test(
             model.restore(sess, model_path)
         if data_type == 'FP16':
             fp32_variables = [var_name for var_name, _ in tf.contrib.framework.list_variables(model_path)]
-            #print("fp32_variables: ", fp32_variables)
+            # print("fp32_variables: ", fp32_variables)
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
             for variable in tf.global_variables():
-                #print("variable: ", variable)
+                # print("variable: ", variable)
                 if variable.op.name in fp32_variables:
                     var = tf.contrib.framework.load_variable(model_path, variable.op.name)
                     # print("var: ", var)
