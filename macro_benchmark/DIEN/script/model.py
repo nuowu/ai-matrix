@@ -7,6 +7,12 @@ from rnn import dynamic_rnn
 from utils import *
 from Dice import dice
 
+from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
+
+BS = 1
+SL = 10
+NS = 20
+
 
 class Model(object):
     def __init__(self, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling = False):
@@ -17,6 +23,17 @@ class Model(object):
         else:
             raise ValueError("Invalid model data type: %s" % data_type)
 
+        self.EMBEDDING_DIM = EMBEDDING_DIM
+        self.HIDDEN_SIZE = HIDDEN_SIZE
+        self.ATTENTION_SIZE = ATTENTION_SIZE
+        self.aux_loss = 0
+        self.lr = tf.placeholder(tf.float32)
+        self.n_uid = n_uid
+        self.n_mid = n_mid
+        self.n_cat = n_cat
+        self.use_negsampling = use_negsampling
+
+    def build_input_gpu(self):
         with tf.name_scope('Inputs'):
             self.mid_his_batch_ph = tf.placeholder(tf.int32, [None, None], name='mid_his_batch_ph')
             self.cat_his_batch_ph = tf.placeholder(tf.int32, [None, None], name='cat_his_batch_ph')
@@ -32,6 +49,21 @@ class Model(object):
                 self.noclk_mid_batch_ph = tf.placeholder(tf.int32, [None, None, None], name='noclk_mid_batch_ph')  # generate 3 item IDs from negative sampling.
                 self.noclk_cat_batch_ph = tf.placeholder(tf.int32, [None, None, None], name='noclk_cat_batch_ph')
 
+    def build_input_ipu(self):
+        with tf.name_scope('Inputs'):
+            self.mid_his_batch_ph = tf.placeholder(tf.int32, [BS, SL], name='mid_his_batch_ph')
+            self.cat_his_batch_ph = tf.placeholder(tf.int32, [BS, SL], name='cat_his_batch_ph')
+            self.uid_batch_ph = tf.placeholder(tf.int32, [BS], name='uid_batch_ph')
+            self.mid_batch_ph = tf.placeholder(tf.int32, [BS], name='mid_batch_ph')
+            self.cat_batch_ph = tf.placeholder(tf.int32, [BS], name='cat_batch_ph')
+            self.mask = tf.placeholder(self.model_dtype, [BS, SL], name='mask')
+            self.seq_len_ph = tf.placeholder(tf.int32, [BS], name='seq_len_ph')
+            self.target_ph = tf.placeholder(self.model_dtype, [BS, 2], name='target_ph')
+            if self.use_negsampling:
+                self.noclk_mid_batch_ph = tf.placeholder(tf.int32, [BS, SL, NS], name='noclk_mid_batch_ph')  # generate 3 item IDs from negative sampling.
+                self.noclk_cat_batch_ph = tf.placeholder(tf.int32, [BS, SL, NS], name='noclk_cat_batch_ph')
+
+    def build_embedding_gpu(self):
         # Embedding layer
         with tf.name_scope('Embedding_layer'):
             self.uid_embeddings_var = tf.get_variable("uid_embedding_var", [n_uid, EMBEDDING_DIM], dtype=self.model_dtype)
@@ -52,10 +84,38 @@ class Model(object):
             if self.use_negsampling:
                 self.noclk_cat_his_batch_embedded = tf.nn.embedding_lookup(self.cat_embeddings_var, self.noclk_cat_batch_ph)
 
+    def build_embedding_ipu(self):
+        # Embedding layer
+        with tf.variable_scope('Embedding_layer', use_resource=True, reuse=tf.AUTO_REUSE):
+            self.uid_embeddings_var = tf.get_variable("uid_embedding_var",
+                                                      shape=[self.n_uid, self.EMBEDDING_DIM],
+                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      dtype=self.model_dtype)
+            self.uid_batch_embedded = ipu_embedding_lookup(self.uid_embeddings_var, self.uid_batch_ph,  name='uid_embedding_lookup')
+
+            self.mid_embeddings_var = tf.get_variable("mid_embedding_var",
+                                                      shape=[self.n_mid, self.EMBEDDING_DIM],
+                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      dtype=self.model_dtype)
+            self.mid_batch_embedded = ipu_embedding_lookup(self.mid_embeddings_var, self.mid_batch_ph,  name='mid_embedding_lookup')
+            self.mid_his_batch_embedded = ipu_embedding_lookup(self.mid_embeddings_var, self.mid_his_batch_ph,  name='mid_his_embedding_lookup')
+            if self.use_negsampling:
+                self.noclk_mid_his_batch_embedded = ipu_embedding_lookup(self.mid_embeddings_var, self.noclk_mid_batch_ph, name='noclk_mid_his_batch_embedded')
+
+            self.cat_embeddings_var = tf.get_variable("cat_embedding_var",
+                                                      shape=[self.n_cat, self.EMBEDDING_DIM],
+                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      dtype=self.model_dtype)
+            self.cat_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_batch_ph,  name='cat_embedding_lookup')
+            self.cat_his_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_his_batch_ph,  name='cat_his_embedding_lookup')
+            if self.use_negsampling:
+                self.noclk_cat_his_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.noclk_cat_batch_ph, name='noclk_cat_his_batch_embedded')
         self.item_eb = tf.concat([self.mid_batch_embedded, self.cat_batch_embedded], 1)
         self.item_his_eb = tf.concat([self.mid_his_batch_embedded, self.cat_his_batch_embedded], 2)
         self.item_his_eb_sum = tf.reduce_sum(self.item_his_eb, 1)
+
         if self.use_negsampling:
+            print("use negative sampling")
             self.noclk_item_his_eb = tf.concat(
                 [self.noclk_mid_his_batch_embedded[:, :, 0, :], self.noclk_cat_his_batch_embedded[:, :, 0, :]], -1)  # 0 means only using the first negative item ID. 3 item IDs are inputed in the line 24.
             self.noclk_item_his_eb = tf.reshape(self.noclk_item_his_eb,
@@ -133,10 +193,48 @@ class Model(object):
             y_hat = tf.nn.softmax(dnn3) + 0.00000001
             return y_hat
 
+    def build_train_gpu(self):
+        self.build_embedding_gpu()
+        self.build_graph()
+        return self.loss, self.accuracy, 0
 
-    def train(self, sess, inps):
+    def build_train_ipu(self):
+        self.build_embedding_ipu()
+        self.build_graph()
+        return self.loss, self.accuracy, 0
+
+    def train(self, sess, inps, ipu_output=None):
+        if not ipu_output:
+            if self.use_negsampling:
+                loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer], feed_dict={
+                    self.uid_batch_ph: inps[0],
+                    self.mid_batch_ph: inps[1],
+                    self.cat_batch_ph: inps[2],
+                    self.mid_his_batch_ph: inps[3],
+                    self.cat_his_batch_ph: inps[4],
+                    self.mask: inps[5],
+                    self.target_ph: inps[6],
+                    self.seq_len_ph: inps[7],
+                    self.lr: inps[8],
+                    self.noclk_mid_batch_ph: inps[9],
+                    self.noclk_cat_batch_ph: inps[10],
+                })
+                return loss, accuracy, aux_loss
+            loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.optimizer], feed_dict={
+                self.uid_batch_ph: inps[0],
+                self.mid_batch_ph: inps[1],
+                self.cat_batch_ph: inps[2],
+                self.mid_his_batch_ph: inps[3],
+                self.cat_his_batch_ph: inps[4],
+                self.mask: inps[5],
+                self.target_ph: inps[6],
+                self.seq_len_ph: inps[7],
+                self.lr: inps[8],
+            })
+            return loss, accuracy, 0
+
         if self.use_negsampling:
-            loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer], feed_dict={
+            loss, accuracy, aux_loss = sess.run(ipu_output, feed_dict={
                 self.uid_batch_ph: inps[0],
                 self.mid_batch_ph: inps[1],
                 self.cat_batch_ph: inps[2],
@@ -150,19 +248,19 @@ class Model(object):
                 self.noclk_cat_batch_ph: inps[10],
             })
             return loss, accuracy, aux_loss
-        else:
-            loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.optimizer], feed_dict={
-                self.uid_batch_ph: inps[0],
-                self.mid_batch_ph: inps[1],
-                self.cat_batch_ph: inps[2],
-                self.mid_his_batch_ph: inps[3],
-                self.cat_his_batch_ph: inps[4],
-                self.mask: inps[5],
-                self.target_ph: inps[6],
-                self.seq_len_ph: inps[7],
-                self.lr: inps[8],
-            })
-            return loss, accuracy, 0
+        loss, accuracy, _ = sess.run(ipu_output, feed_dict={
+            self.uid_batch_ph: inps[0],
+            self.mid_batch_ph: inps[1],
+            self.cat_batch_ph: inps[2],
+            self.mid_his_batch_ph: inps[3],
+            self.cat_his_batch_ph: inps[4],
+            self.mask: inps[5],
+            self.target_ph: inps[6],
+            self.seq_len_ph: inps[7],
+            self.lr: inps[8],
+        })
+        return loss, accuracy, 0
+
 
     def calculate(self, sess, inps):
         if self.use_negsampling:
@@ -351,9 +449,10 @@ class Model_DIN(Model):
                                         ATTENTION_SIZE,
                                         use_negsampling)
 
+    def build_graph(self):
         # Attention layer
         with tf.name_scope('Attention_layer'):
-            attention_output = din_attention(self.item_eb, self.item_his_eb, ATTENTION_SIZE, self.mask)
+            attention_output = din_attention(self.item_eb, self.item_his_eb, self.ATTENTION_SIZE, self.mask)
             att_fea = tf.reduce_sum(attention_output, 1)
             tf.summary.histogram('att_fea', att_fea)
         inp = tf.concat([self.uid_batch_embedded, self.item_eb, self.item_his_eb_sum, self.item_eb * self.item_his_eb_sum, att_fea], -1)

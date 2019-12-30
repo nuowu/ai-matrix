@@ -24,6 +24,7 @@ parser.add_argument("--model", type=str, default='DIEN', help="model")
 parser.add_argument("--seed", type=int, default=3, help="seed value")
 parser.add_argument("--batch_size", type=int, default=128, help="batch size")
 parser.add_argument("--data_type", type=str, default='FP32', help="data type: FP32 or FP16")
+parser.add_argument("--max_len", type=int, default=None, help="max seq len")
 parser.add_argument("--num_accelerators", type=int, default=1, help="number of accelerators used for training")
 args = parser.parse_args()
 
@@ -33,6 +34,10 @@ ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 
 TOTAL_TRAIN_SIZE = 512000
+
+NUID = 543060
+NMID = 367983
+NCAT = 1601
 
 
 def prepare_data(input, target, maxlen = None, return_neg = False):
@@ -157,6 +162,29 @@ def eval(sess, test_data, model, model_path):
     return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums
 
 
+def get_model(model_type, data_type):
+    if model_type == 'DNN':
+        return Model_DNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+    elif model_type == 'PNN':
+        return Model_PNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+    elif model_type == 'Wide':
+        return Model_WideDeep(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+    elif model_type == 'DIN':
+        return Model_DIN(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    elif model_type == 'DIN-V2-gru-att-gru':
+        return Model_DIN_V2_Gru_att_Gru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    elif model_type == 'DIN-V2-gru-gru-att':
+        return Model_DIN_V2_Gru_Gru_att(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    elif model_type == 'DIN-V2-gru-qa-attGru':
+        return Model_DIN_V2_Gru_QA_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    elif model_type == 'DIN-V2-gru-vec-attGru':
+        return Model_DIN_V2_Gru_Vec_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    elif model_type == 'DIEN':
+        return Model_DIN_V2_Gru_Vec_attGru_Neg(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+    else:
+        sys.exit("Invalid model_type : %s" % model_type)
+
+
 def train(
         train_file = "local_train_splitByUser",
         test_file = "local_test_splitByUser",
@@ -170,42 +198,30 @@ def train(
         model_type = 'DNN',
         data_type = 'FP32',
         seed = 2,
+        use_ipu=True,
 ):
     print("batch_size: ", batch_size)
     print("model: ", model_type)
     model_path = "dnn_save_path/ckpt_noshuff" + model_type + str(seed)
     best_model_path = "dnn_best_model/ckpt_noshuff" + model_type + str(seed)
 
-    gpu_options = tf.GPUOptions(allow_growth=True)
-    with ipu_scope('/device:IPU:0'):
-        model.build_input_ipu()
-        batch = ipu_compiler.compile(model.build_train, [])
+    model = get_model(model_type, data_type)
 
-    with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+    batch = None
+    if use_ipu:
+        with ipu_scope('/device:IPU:0'):
+            model.build_input_ipu()
+            batch = ipu_compiler.compile(model.build_train_ipu, [])
+
+    if use_ipu:
+        session = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+    else:
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+    with session as sess:
         train_data = DataIterator(train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
         test_data = DataIterator(test_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen)
         n_uid, n_mid, n_cat = train_data.get_n()
-        if model_type == 'DNN':
-            model = Model_DNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
-        elif model_type == 'PNN':
-            model = Model_PNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
-        elif model_type == 'Wide':
-            model = Model_WideDeep(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
-        elif model_type == 'DIN':
-            model = Model_DIN(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        elif model_type == 'DIN-V2-gru-att-gru':
-            model = Model_DIN_V2_Gru_att_Gru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        elif model_type == 'DIN-V2-gru-gru-att':
-            model = Model_DIN_V2_Gru_Gru_att(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        elif model_type == 'DIN-V2-gru-qa-attGru':
-            model = Model_DIN_V2_Gru_QA_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        elif model_type == 'DIN-V2-gru-vec-attGru':
-            model = Model_DIN_V2_Gru_Vec_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        elif model_type == 'DIEN':
-            model = Model_DIN_V2_Gru_Vec_attGru_Neg(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
-        else:
-            print ("Invalid model_type : %s" % model_type)
-            return
         # for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
         #     print("global variable dtype: ", var.dtype)
         #     if var.dtype == 'float32_ref':
@@ -221,7 +237,7 @@ def train(
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         sys.stdout.flush()
-        print('                                                                                      test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
+        # print('                                                                                      test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
         sys.stdout.flush()
 
         iter = 0
@@ -235,19 +251,7 @@ def train(
             for src, tgt in train_data:
                 uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(src, tgt, maxlen, return_neg=True)
                 start_time = time.time()
-                loss, acc, aux_loss = sess.run(batch, feed_dict = {
-                    model.uid_batch_ph: uids,
-                    model.mid_batch_ph: mids,
-                    model.cat_batch_ph: cats,
-                    model.mid_his_batch_ph: mid_his,
-                    model.cat_his_batch_ph: cat_his,
-                    model.mask: mid_mask,
-                    model.target_ph: target,
-                    model.seq_len_ph: sl,
-                    model.lr: lr,
-                    model.noclk_mid_batch_ph: noclk_mids,
-                    model.noclk_cat_batch_ph: noclk_cats,
-                    })
+                loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats], ipu_output=batch)
                 end_time = time.time()
                 # print("training time of one batch: %.3f" % (end_time - start_time))
                 approximate_accelerator_time += end_time - start_time
@@ -263,7 +267,6 @@ def train(
                     print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
                           (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
                     print('                                                                                          test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
-
                     loss_sum = 0.0
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0
@@ -279,7 +282,8 @@ def train(
                 break
 
         print("iter: %d" % iter)
-        print("Total recommendations: %d" % TOTAL_TRAIN_SIZE)
+        print("Total train_size : %d" % train_size)
+        print("Total batch_size : %d" % batch_size)
         print("Approximate accelerator time in seconds is %.3f" % approximate_accelerator_time)
         print("Approximate accelerator performance in recommendations/second is %.3f" % (float(TOTAL_TRAIN_SIZE)/float(approximate_accelerator_time)))
 
@@ -378,9 +382,9 @@ if __name__ == '__main__':
     numpy.random.seed(SEED)
     random.seed(SEED)
     if args.mode == 'train':
-        train(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type)
+        train(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type, maxlen=args.max_len)
     elif args.mode == 'test':
-        test(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type)
+        test(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type, maxlen=args.max_len)
     else:
         print('do nothing...')
 
