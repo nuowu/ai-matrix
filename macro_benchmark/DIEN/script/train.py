@@ -14,10 +14,6 @@ from tensorflow.python.ipu import utils
 from tensorflow.python.ipu import ipu_compiler
 from tensorflow.python.ipu.scopes import ipu_scope
 
-from gc_profile import save_tf_report
-from tensorflow.compiler.plugin.poplar.ops import gen_ipu_ops
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default='train', help="mode, train or test")
 parser.add_argument("--model", type=str, default='DIEN', help="model")
@@ -214,7 +210,7 @@ def train(
             batch = ipu_compiler.compile(model.build_train_ipu, [])
 
     if use_ipu:
-        session = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+        session = tf.Session(config=tf.ConfigProto(log_device_placement=False))
     else:
         gpu_options = tf.GPUOptions(allow_growth=True)
         session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
@@ -266,7 +262,6 @@ def train(
                     # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
                     print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
                           (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
-                    print('                                                                                          test_auc: %.4f ----test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
                     loss_sum = 0.0
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0

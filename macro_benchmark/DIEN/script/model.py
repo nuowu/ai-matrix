@@ -154,7 +154,7 @@ class Model(object):
                 if self.use_negsampling:
                     self.loss += self.aux_loss
                 tf.summary.scalar('loss', self.loss)
-                self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+                self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
 
                 # Accuracy metric
                 self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), self.model_dtype))
@@ -382,7 +382,7 @@ class Model_WideDeep(Model):
             # Cross-entropy loss and optimizer initialization
             self.loss = - tf.reduce_mean(tf.log(self.y_hat) * self.target_ph)
             tf.summary.scalar('loss', self.loss)
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+            self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
 
             # Accuracy metric
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), tf.float32))
