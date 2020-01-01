@@ -8,6 +8,8 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from keras import backend as K
 
+from constants import MAX_ITERS
+
 _BIAS_VARIABLE_NAME = "bias"
 _WEIGHTS_VARIABLE_NAME = "kernel"
 
@@ -424,7 +426,7 @@ def self_attention(facts, ATTENTION_SIZE, mask, stag='null'):
                                size=0,
                                dynamic_size=True,
                                element_shape=(facts[:, 0, :].get_shape()))
-    _, output_op, _ = tf.while_loop(cond, body, [facts, output_ta, 0])
+    _, output_op, _ = tf.while_loop(cond, body, [facts, output_ta, 0], maximum_iterations=MAX_ITERS)
     self_attention = output_op.stack()
     self_attention = tf.transpose(self_attention, perm = [1, 0, 2])
     return self_attention
@@ -448,7 +450,7 @@ def self_all_attention(facts, ATTENTION_SIZE, mask, stag='null'):
                                size=0,
                                dynamic_size=True,
                                element_shape=(facts[:, 0, :].get_shape()))
-    _, output_op, _ = tf.while_loop(cond, body, [facts, output_ta, 0])
+    _, output_op, _ = tf.while_loop(cond, body, [facts, output_ta, 0], maximum_iterations=MAX_ITERS)
     self_attention = output_op.stack()
     self_attention = tf.transpose(self_attention, perm = [1, 0, 2])
     return self_attention
