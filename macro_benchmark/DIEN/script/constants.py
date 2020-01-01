@@ -1,0 +1,4 @@
+BS = 1
+MAX_ITERS = 10
+NS = 5
+SL = 10
