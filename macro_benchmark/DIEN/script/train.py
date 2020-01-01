@@ -382,5 +382,3 @@ if __name__ == '__main__':
         test(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type, maxlen=args.max_len)
     else:
         print('do nothing...')
-
-
