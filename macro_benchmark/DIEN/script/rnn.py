@@ -39,6 +39,7 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
 
+from constants import MAX_ITERS
 
 # pylint: disable=protected-access
 _concat = rnn_cell_impl._concat
@@ -780,14 +781,18 @@ def _dynamic_rnn_loop(cell,
           body=_time_step,
           loop_vars=(time, output_ta, state, att_scores),
           parallel_iterations=parallel_iterations,
-          swap_memory=swap_memory)
+          swap_memory=swap_memory,
+          maximum_iterations=MAX_ITERS,
+          )
   else:
       _, output_final_ta, final_state = control_flow_ops.while_loop(
           cond=lambda time, *_: time < time_steps,
           body=_time_step,
           loop_vars=(time, output_ta, state),
           parallel_iterations=parallel_iterations,
-          swap_memory=swap_memory)
+          swap_memory=swap_memory,
+          maximum_iterations=MAX_ITERS,
+          )
 
   # Unpack final output if not using output tuples.
   final_outputs = tuple(ta.stack() for ta in output_final_ta)

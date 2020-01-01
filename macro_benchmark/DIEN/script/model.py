@@ -8,10 +8,9 @@ from utils import *
 from Dice import dice
 
 from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
-
-BS = 1
-SL = 10
-NS = 20
+from constants import BS
+from constants import SL
+from constants import NS
 
 
 class Model(object):
@@ -154,7 +153,7 @@ class Model(object):
                 if self.use_negsampling:
                     self.loss += self.aux_loss
                 tf.summary.scalar('loss', self.loss)
-                self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+                self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
 
                 # Accuracy metric
                 self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), self.model_dtype))
@@ -306,21 +305,22 @@ class Model_DIN_V2_Gru_att_Gru(Model):
                                                        EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE,
                                                        use_negsampling)
 
+    def build_graph(self):
         # RNN layer(-s)
         with tf.name_scope('rnn_1'):
-            rnn_outputs, _ = dynamic_rnn(GRUCell(HIDDEN_SIZE), inputs=self.item_his_eb,
+            rnn_outputs, _ = dynamic_rnn(GRUCell(self.HIDDEN_SIZE), inputs=self.item_his_eb,
                                          sequence_length=self.seq_len_ph, dtype=tf.float32,
                                          scope="gru1")
             tf.summary.histogram('GRU_outputs', rnn_outputs)
 
         # Attention layer
         with tf.name_scope('Attention_layer_1'):
-            att_outputs, alphas = din_fcn_attention(self.item_eb, rnn_outputs, ATTENTION_SIZE, self.mask,
+            att_outputs, alphas = din_fcn_attention(self.item_eb, rnn_outputs, self.ATTENTION_SIZE, self.mask,
                                                     softmax_stag=1, stag='1_1', mode='LIST', return_alphas=True)
             tf.summary.histogram('alpha_outputs', alphas)
 
         with tf.name_scope('rnn_2'):
-            rnn_outputs2, final_state2 = dynamic_rnn(GRUCell(HIDDEN_SIZE), inputs=att_outputs,
+            rnn_outputs2, final_state2 = dynamic_rnn(GRUCell(self.HIDDEN_SIZE), inputs=att_outputs,
                                                      sequence_length=self.seq_len_ph, dtype=tf.float32,
                                                      scope="gru2")
             tf.summary.histogram('GRU2_Final_State', final_state2)
@@ -382,7 +382,7 @@ class Model_WideDeep(Model):
             # Cross-entropy loss and optimizer initialization
             self.loss = - tf.reduce_mean(tf.log(self.y_hat) * self.target_ph)
             tf.summary.scalar('loss', self.loss)
-            self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+            self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
 
             # Accuracy metric
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), tf.float32))
