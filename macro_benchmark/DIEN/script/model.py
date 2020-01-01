@@ -466,6 +466,7 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
                                                               EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type,
                                                               use_negsampling)
 
+    def build_graph(self):
         def dtype_getter(getter, name, dtype=None, *args, **kwargs):
             var = getter(name, dtype=self.model_dtype, *args, **kwargs)
             return var
@@ -473,7 +474,7 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
         with tf.variable_scope("dien", custom_getter=dtype_getter, dtype=self.model_dtype):
             # RNN layer(-s)
             with tf.name_scope('rnn_1'):
-                rnn_outputs, _ = dynamic_rnn(GRUCell(HIDDEN_SIZE), inputs=self.item_his_eb,
+                rnn_outputs, _ = dynamic_rnn(GRUCell(self.HIDDEN_SIZE), inputs=self.item_his_eb,
                                              sequence_length=self.seq_len_ph, dtype=self.model_dtype,
                                              scope="gru1")
                 tf.summary.histogram('GRU_outputs', rnn_outputs)
@@ -485,12 +486,12 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
 
             # Attention layer
             with tf.name_scope('Attention_layer_1'):
-                att_outputs, alphas = din_fcn_attention(self.item_eb, rnn_outputs, ATTENTION_SIZE, self.mask,
+                att_outputs, alphas = din_fcn_attention(self.item_eb, rnn_outputs, self.ATTENTION_SIZE, self.mask,
                                                         softmax_stag=1, stag='1_1', mode='LIST', return_alphas=True)
                 tf.summary.histogram('alpha_outputs', alphas)
 
             with tf.name_scope('rnn_2'):
-                rnn_outputs2, final_state2 = dynamic_rnn(VecAttGRUCell(HIDDEN_SIZE), inputs=rnn_outputs,
+                rnn_outputs2, final_state2 = dynamic_rnn(VecAttGRUCell(self.HIDDEN_SIZE), inputs=rnn_outputs,
                                                          att_scores = tf.expand_dims(alphas, -1),
                                                          sequence_length=self.seq_len_ph, dtype=self.model_dtype,
                                                          scope="gru2")

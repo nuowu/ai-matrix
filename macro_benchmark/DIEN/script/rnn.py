@@ -39,6 +39,8 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
 
+import tensorflow as tf
+from constants import BS
 from constants import MAX_ITERS
 
 # pylint: disable=protected-access
@@ -746,7 +748,10 @@ def _dynamic_rnn_loop(cell,
 
     input_t = nest.pack_sequence_as(structure=inputs, flat_sequence=input_t)
     if att_scores is not None:
-        att_score = att_scores[:, time, :]
+        att_score = tf.gather_nd(
+            att_scores,
+            list(zip(range(BS), [time] * BS))
+            )
         call_cell = lambda: cell(input_t, state, att_score)
     else:
         call_cell = lambda: cell(input_t, state)
