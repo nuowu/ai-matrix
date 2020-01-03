@@ -38,6 +38,7 @@ from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import nest
+from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
 
 import tensorflow as tf
 from constants import BS
@@ -748,10 +749,8 @@ def _dynamic_rnn_loop(cell,
 
     input_t = nest.pack_sequence_as(structure=inputs, flat_sequence=input_t)
     if att_scores is not None:
-        att_score = tf.gather_nd(
-            att_scores,
-            list(zip(range(BS), [time] * BS))
-            )
+        att_scores_t = tf.transpose(att_scores, [1, 0, 2])
+        att_score = ipu_embedding_lookup(att_scores_t, time,  name='uid_embedding_lookup')
         call_cell = lambda: cell(input_t, state, att_score)
     else:
         call_cell = lambda: cell(input_t, state)
