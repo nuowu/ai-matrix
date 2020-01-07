@@ -20,7 +20,7 @@ parser.add_argument("--model", type=str, default='DIEN', help="model")
 parser.add_argument("--seed", type=int, default=3, help="seed value")
 parser.add_argument("--batch_size", type=int, default=128, help="batch size")
 parser.add_argument("--data_type", type=str, default='FP32', help="data type: FP32 or FP16")
-parser.add_argument("--max_len", type=int, default=None, help="max seq len")
+parser.add_argument("--max_len", type=int, default=100, help="max seq len")
 parser.add_argument("--num_accelerators", type=int, default=1, help="number of accelerators used for training")
 args = parser.parse_args()
 
@@ -158,25 +158,25 @@ def eval(sess, test_data, model, model_path):
     return test_auc, loss_sum, accuracy_sum, aux_loss_sum, eval_time, nums
 
 
-def get_model(model_type, data_type):
+def get_model(model_type, data_type, run_options):
     if model_type == 'DNN':
-        return Model_DNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+        return Model_DNN(run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
     elif model_type == 'PNN':
-        return Model_PNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+        return Model_PNN(run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
     elif model_type == 'Wide':
-        return Model_WideDeep(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
+        return Model_WideDeep(run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
     elif model_type == 'DIN':
-        return Model_DIN(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     elif model_type == 'DIN-V2-gru-att-gru':
-        return Model_DIN_V2_Gru_att_Gru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN_V2_Gru_att_Gru(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     elif model_type == 'DIN-V2-gru-gru-att':
-        return Model_DIN_V2_Gru_Gru_att(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN_V2_Gru_Gru_att(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     elif model_type == 'DIN-V2-gru-qa-attGru':
-        return Model_DIN_V2_Gru_QA_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN_V2_Gru_QA_attGru(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     elif model_type == 'DIN-V2-gru-vec-attGru':
-        return Model_DIN_V2_Gru_Vec_attGru(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN_V2_Gru_Vec_attGru(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     elif model_type == 'DIEN':
-        return Model_DIN_V2_Gru_Vec_attGru_Neg(NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
+        return Model_DIN_V2_Gru_Vec_attGru_Neg(run_options, NUID, NMID, NCAT, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type)
     else:
         sys.exit("Invalid model_type : %s" % model_type)
 
@@ -196,12 +196,22 @@ def train(
         seed = 2,
         use_ipu=True,
 ):
+    class RunningOptions:
+        def __init__(self,batch_size = 4, sequence_length = 100, negative_samples = 5, max_iteration = 10):
+            self.batch_size = batch_size
+            self.sequence_length = sequence_length
+            self.negative_samples = negative_samples
+            self.max_rnn_while_loops = max_iteration
+
+    
     print("batch_size: ", batch_size)
+    print("sequence lenght: ", maxlen)
     print("model: ", model_type)
     model_path = "dnn_save_path/ckpt_noshuff" + model_type + str(seed)
     best_model_path = "dnn_best_model/ckpt_noshuff" + model_type + str(seed)
+    run_options = RunningOptions(batch_size = batch_size, sequence_length = maxlen)
 
-    model = get_model(model_type, data_type)
+    model = get_model(model_type, data_type, run_options)
 
     batch = None
     if use_ipu:

@@ -41,8 +41,6 @@ from tensorflow.python.util import nest
 from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
 
 import tensorflow as tf
-from constants import BS
-from constants import MAX_ITERS
 
 # pylint: disable=protected-access
 _concat = rnn_cell_impl._concat
@@ -438,7 +436,7 @@ def bidirectional_dynamic_rnn(cell_fw, cell_bw, inputs, sequence_length=None,
   return (outputs, output_states)
 
 
-def dynamic_rnn(cell, inputs, att_scores=None, sequence_length=None, initial_state=None,
+def dynamic_rnn(cell, inputs, max_iteration, att_scores=None, sequence_length=None, initial_state=None,
                 dtype=None, parallel_iterations=None, swap_memory=False,
                 time_major=False, scope=None):
   """Creates a recurrent neural network specified by RNNCell `cell`.
@@ -611,6 +609,7 @@ def dynamic_rnn(cell, inputs, att_scores=None, sequence_length=None, initial_sta
         state,
         parallel_iterations=parallel_iterations,
         swap_memory=swap_memory,
+        max_iteration = max_iteration,
         att_scores = att_scores,
         sequence_length=sequence_length,
         dtype=dtype)
@@ -630,6 +629,7 @@ def _dynamic_rnn_loop(cell,
                       initial_state,
                       parallel_iterations,
                       swap_memory,
+                      max_iteration,
                       att_scores = None,
                       sequence_length=None,
                       dtype=None):
@@ -786,7 +786,7 @@ def _dynamic_rnn_loop(cell,
           loop_vars=(time, output_ta, state, att_scores),
           parallel_iterations=parallel_iterations,
           swap_memory=swap_memory,
-          maximum_iterations=MAX_ITERS,
+          maximum_iterations=max_iteration,
           )
   else:
       _, output_final_ta, final_state = control_flow_ops.while_loop(
@@ -795,7 +795,7 @@ def _dynamic_rnn_loop(cell,
           loop_vars=(time, output_ta, state),
           parallel_iterations=parallel_iterations,
           swap_memory=swap_memory,
-          maximum_iterations=MAX_ITERS,
+          maximum_iterations=max_iteration,
           )
 
   # Unpack final output if not using output tuples.
