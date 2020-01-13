@@ -41,7 +41,7 @@ from tensorflow.python.util import nest
 from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
 
 import tensorflow as tf
-
+BS = 2
 # pylint: disable=protected-access
 _concat = rnn_cell_impl._concat
 assert_like_rnncell = rnn_cell_impl.assert_like_rnncell
@@ -749,8 +749,9 @@ def _dynamic_rnn_loop(cell,
 
     input_t = nest.pack_sequence_as(structure=inputs, flat_sequence=input_t)
     if att_scores is not None:
-        att_scores_t = tf.transpose(att_scores, [1, 0, 2])
-        att_score = ipu_embedding_lookup(att_scores_t, time,  name='uid_embedding_lookup')
+        att_scores = tf.transpose(att_scores, [1, 0, 2])
+        att_score = ipu_embedding_lookup(att_scores, time)
+        att_scores = tf.transpose(att_scores, [1, 0, 2])
         call_cell = lambda: cell(input_t, state, att_score)
     else:
         call_cell = lambda: cell(input_t, state)
