@@ -41,7 +41,6 @@ from tensorflow.python.util import nest
 from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
 
 import tensorflow as tf
-BS = 2
 # pylint: disable=protected-access
 _concat = rnn_cell_impl._concat
 assert_like_rnncell = rnn_cell_impl.assert_like_rnncell
