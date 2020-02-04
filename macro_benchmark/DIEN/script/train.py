@@ -212,6 +212,10 @@ def train(
     run_options = RunningOptions(batch_size = batch_size, sequence_length = maxlen)
 
     model = get_model(model_type, data_type, run_options)
+    
+    # build embedding layer on the CPU
+    with tf.device("/cpu:0"):
+       model.build_embedding_input_ipu()
 
     batch = None
     if use_ipu:
@@ -220,11 +224,14 @@ def train(
             batch = ipu_compiler.compile(model.build_train_ipu, [])
 
     if use_ipu:
-        session = tf.Session(config=tf.ConfigProto(log_device_placement=False))
+        session = tf.Session(config=tf.ConfigProto(log_device_placement=True))
     else:
         gpu_options = tf.GPUOptions(allow_growth=True)
         session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     with session as sess:
+        writer = tf.summary.FileWriter(logdir="tensorboard", graph=sess.graph)
+        writer.flush()
+
         train_data = DataIterator(train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
         test_data = DataIterator(test_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen)
         n_uid, n_mid, n_cat = train_data.get_n()
@@ -234,8 +241,8 @@ def train(
         #         print("global variable: ", var)
         # model = Model_DNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
 
-        ipu_options = utils.create_ipu_config(profiling=False, profile_execution=False)
-        ipu_options = utils.auto_select_ipus(ipu_options, [1])
+        ipu_options = utils.create_ipu_config(profiling=True, profile_execution=True)
+        ipu_options = utils.auto_select_ipus(ipu_options, 1)
 
         utils.configure_ipu_system(ipu_options)
         utils.move_variable_initialization_to_cpu()
@@ -259,7 +266,7 @@ def train(
                 start_time = time.time()
                 loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats], ipu_output=batch)
                 end_time = time.time()
-                # print("training time of one batch: %.3f" % (end_time - start_time))
+                print("training time of one batch: %.3f" % (end_time - start_time))
                 approximate_accelerator_time += end_time - start_time
                 loss_sum += loss
                 accuracy_sum += acc
@@ -268,8 +275,8 @@ def train(
                 train_size += batch_size
                 sys.stdout.flush()
                 if (iter % test_iter) == 0:
-                    # print("train_size: %d" % train_size)
-                    # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
+                    print("train_size: %d" % train_size)
+                    print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
                     print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
                           (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
                     loss_sum = 0.0
@@ -386,6 +393,9 @@ if __name__ == '__main__':
     tf.set_random_seed(SEED)
     numpy.random.seed(SEED)
     random.seed(SEED)
+    print("beginning")
+    #tf.debugging.set_log_device_placement(True)
+    print(args)
     if args.mode == 'train':
         train(model_type=args.model, seed=SEED, batch_size=args.batch_size, data_type=args.data_type, maxlen=args.max_len)
     elif args.mode == 'test':
