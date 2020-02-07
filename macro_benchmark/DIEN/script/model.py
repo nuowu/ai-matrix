@@ -120,49 +120,60 @@ class Model(object):
                    "output_types": [dtypes.float32],
                    "output_shapes": [tensor_shape.TensorShape(embedding_lookup_shape)],
                 }
+                mid_his_batch_embedded_shape_inf = {
+                   "output_types": [dtypes.float32],
+                   "output_shapes": [tensor_shape.TensorShape([5, 10, 18])],
+                }
+                noclk_mid_his_batch_embedded_shape_inf = {
+                   "output_types": [dtypes.float32],
+                   "output_shapes": [tensor_shape.TensorShape([5, 10, 5, 18])],
+                }
+                noclk_cat_his_batch_embedded_shape_inf = {
+                   "output_types": [dtypes.float32],
+                   "output_shapes": [tensor_shape.TensorShape([5, 10, 5, 18])],
+                }
+                cat_his_batch_embedded_shape_inf = {
+                   "output_types": [dtypes.float32],
+                   "output_shapes": [tensor_shape.TensorShape([5, 10, 18])],
+                }
                 self.uid_batch_embedded = ipu.custom_ops.cpu_user_operation([self.uid_embeddings_var, self.uid_batch_ph],
                                               self.lib_path,
                                               name='cpu_uid_embedding_lookup',
                                               op_name='cpuCallback',
-                                              outs=outputs)
+                                              outs=outputs)[0]
                 self.mid_batch_embedded = ipu.custom_ops.cpu_user_operation([self.mid_embeddings_var, self.mid_batch_ph],
                                               self.lib_path,
                                               name='cpu_mid_embedding_lookup',
                                               op_name='cpuCallback',
-                                              outs=outputs)
+                                              outs=outputs)[0]
                 self.mid_his_batch_embedded = ipu.custom_ops.cpu_user_operation([self.mid_embeddings_var, self.mid_his_batch_ph],
                                               self.lib_path,
                                               name='cpu_mid_his_embedding_lookup',
                                               op_name='cpuCallback',
-                                              outs=outputs)
-                print("self.uid_batch_embedded:" + str(self.uid_batch_embedded))
-                print("self.mid_batch_embedded:" + str(self.mid_batch_embedded))
-                print("self.mid_his_batch_embedded:" + str(self.mid_his_batch_embedded))
+                                              outs=mid_his_batch_embedded_shape_inf)[0]
                 if self.use_negsampling:
                     self.noclk_mid_his_batch_embedded = ipu.custom_ops.cpu_user_operation([self.mid_embeddings_var, self.noclk_mid_batch_ph],
                                                 self.lib_path,
                                                 name='cpu_noclk_mid_his_batch_embedded',
                                                 op_name='cpuCallback',
-                                                outs=outputs)
+                                                outs=noclk_mid_his_batch_embedded_shape_inf)[0]
                     self.noclk_cat_his_batch_embedded = ipu.custom_ops.cpu_user_operation([self.cat_embeddings_var, self.noclk_cat_batch_ph],
                                               self.lib_path,
                                               name='cpu_noclk_cat_his_batch_embedded',
                                               op_name='cpuCallback',
-                                              outs=outputs)
+                                              outs=noclk_cat_his_batch_embedded_shape_inf)[0]
 
-                    print("self.noclk_mid_his_batch_embedded:" + str(type(self.noclk_mid_his_batch_embedded)))
-                    print("self.noclk_cat_his_batch_embedded:" + str(self.noclk_cat_his_batch_embedded))
                 
                 self.cat_batch_embedded = ipu.custom_ops.cpu_user_operation([self.cat_embeddings_var, self.cat_batch_ph],
                                               self.lib_path,
                                               name='cpu_cat_embedding_lookup',
                                               op_name='cpuCallback',
-                                              outs=outputs)
+                                              outs=outputs)[0]
                 self.cat_his_batch_embedded = ipu.custom_ops.cpu_user_operation([self.cat_embeddings_var, self.cat_his_batch_ph],
                                               self.lib_path,
                                               name='cpu_cat_his_embedding_lookup',
                                               op_name='cpuCallback',
-                                              outs=outputs)
+                                              outs=cat_his_batch_embedded_shape_inf)[0]
             else:
                 self.uid_embeddings_var = tf.get_variable("uid_embedding_var",
                                                             shape=[self.n_uid, self.EMBEDDING_DIM],
@@ -188,17 +199,78 @@ class Model(object):
                 self.cat_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_batch_ph,  name='cat_embedding_lookup')
                 self.cat_his_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_his_batch_ph,  name='cat_his_embedding_lookup')
 
+        print("----")
+        print("self.uid_embeddings_var:")
+        print(self.uid_embeddings_var)
+        print("self.uid_batch_ph:")
+        print(self.uid_batch_ph)
+        print("self.uid_batch_embedded:")
+        print(self.uid_batch_embedded)
+        print("----")
+        print("self.mid_embeddings_var:")
+        print(self.mid_embeddings_var)
+        print("self.mid_batch_ph:")
+        print(self.mid_batch_ph)
+        print("self.mid_batch_embedded:")
+        print(self.mid_batch_embedded)
+        print("----")
+        print("self.mid_embeddings_var:")
+        print(self.mid_embeddings_var)
+        print("self.mid_his_batch_ph:")
+        print(self.mid_his_batch_ph)
+        print("self.mid_his_batch_embedded:")
+        print(self.mid_his_batch_embedded)
+        print("----")
+        print("self.cat_embeddings_var:")
+        print(self.cat_embeddings_var)
+        # print("self.noclk_mid_batch_ph:")
+        # print(self.noclk_mid_batch_ph)
+        # print("self.noclk_cat_batch_ph:")
+        # print(self.noclk_cat_batch_ph)
+        print("self.cat_batch_ph:")
+        print(self.cat_batch_ph)
+        print("self.cat_his_batch_ph:")
+        print(self.cat_his_batch_ph)
+        print("----")
+        print("----")
+        print("----")
+        # print("self.noclk_mid_his_batch_embedded:")
+        # print(self.noclk_mid_his_batch_embedded)
+        # print("self.noclk_cat_his_batch_embedded:")
+        # print(self.noclk_cat_his_batch_embedded)
+        print("----")
+        print("----")
+        print("----")
+        print("self.cat_batch_embedded:")
+        print(self.cat_batch_embedded)
+        print("self.cat_his_batch_embedded:")
+        print(self.cat_his_batch_embedded)
+        print("----")
+        print("shape of self.mid_batch_embedded:")
+        print(self.mid_batch_embedded.get_shape())
+        print("shape of self.cat_batch_embedded:")
+        print(self.cat_batch_embedded.get_shape())
+
         self.item_eb = tf.concat([self.mid_batch_embedded, self.cat_batch_embedded], 1)
         self.item_his_eb = tf.concat([self.mid_his_batch_embedded, self.cat_his_batch_embedded], 2)
         self.item_his_eb_sum = tf.reduce_sum(self.item_his_eb, 1)
 
         print("use negative sampling:" + str(self.use_negsampling))
         if self.use_negsampling:
-            print("use negative sampling")
+            print("noclk_mid_his_batch_embedded:")
             print(tf.shape(self.noclk_mid_his_batch_embedded))
+
+            print("noclk_cat_his_batch_embedded:")
             print(tf.shape(self.noclk_cat_his_batch_embedded))
+            
             a = self.noclk_mid_his_batch_embedded[:, :, 0, :]
+            print("a:")
+            print(tf.shape(a))
+            
             b = self.noclk_cat_his_batch_embedded[:, :, 0, :]
+            print("b:")
+            print(tf.shape(b))
+
             self.noclk_item_his_eb = tf.concat(
                 [a, b], -1)  # 0 means only using the first negative item ID. 3 item IDs are inputed in the line 24.
             self.noclk_item_his_eb = tf.reshape(self.noclk_item_his_eb,
@@ -545,7 +617,7 @@ class Model_DIN(Model):
 
 
 class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
-    def __init__(self, run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling=True):
+    def __init__(self, run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling=False):
         super(Model_DIN_V2_Gru_Vec_attGru_Neg, self).__init__(run_options, n_uid, n_mid, n_cat,
                                                               EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type,
                                                               use_negsampling)
