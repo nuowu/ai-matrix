@@ -617,7 +617,7 @@ class Model_DIN(Model):
 
 
 class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
-    def __init__(self, run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling=False):
+    def __init__(self, run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling=True):
         super(Model_DIN_V2_Gru_Vec_attGru_Neg, self).__init__(run_options, n_uid, n_mid, n_cat,
                                                               EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type,
                                                               use_negsampling)
