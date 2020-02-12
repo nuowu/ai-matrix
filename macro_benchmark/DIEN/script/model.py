@@ -22,7 +22,7 @@ class Model(object):
         self.EMBEDDING_DIM = EMBEDDING_DIM
         self.HIDDEN_SIZE = HIDDEN_SIZE
         self.ATTENTION_SIZE = ATTENTION_SIZE
-        self.aux_loss = 0
+        #self.aux_loss = 0
         self.lr = tf.placeholder(tf.float32)
         self.n_uid = n_uid
         self.n_mid = n_mid
@@ -85,13 +85,13 @@ class Model(object):
         with tf.variable_scope('Embedding_layer', use_resource=True, reuse=tf.AUTO_REUSE):
             self.uid_embeddings_var = tf.get_variable("uid_embedding_var",
                                                       shape=[self.n_uid, self.EMBEDDING_DIM],
-                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      # initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
                                                       dtype=self.model_dtype)
             self.uid_batch_embedded = ipu_embedding_lookup(self.uid_embeddings_var, self.uid_batch_ph,  name='uid_embedding_lookup')
 
             self.mid_embeddings_var = tf.get_variable("mid_embedding_var",
                                                       shape=[self.n_mid, self.EMBEDDING_DIM],
-                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      # initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
                                                       dtype=self.model_dtype)
             self.mid_batch_embedded = ipu_embedding_lookup(self.mid_embeddings_var, self.mid_batch_ph,  name='mid_embedding_lookup')
             self.mid_his_batch_embedded = ipu_embedding_lookup(self.mid_embeddings_var, self.mid_his_batch_ph,  name='mid_his_embedding_lookup')
@@ -100,7 +100,7 @@ class Model(object):
 
             self.cat_embeddings_var = tf.get_variable("cat_embedding_var",
                                                       shape=[self.n_cat, self.EMBEDDING_DIM],
-                                                      initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
+                                                      # initializer=tf.random_uniform_initializer(minval=-0.05, maxval=0.05, dtype=self.model_dtype),
                                                       dtype=self.model_dtype)
             self.cat_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_batch_ph,  name='cat_embedding_lookup')
             self.cat_his_batch_embedded = ipu_embedding_lookup(self.cat_embeddings_var, self.cat_his_batch_ph,  name='cat_his_embedding_lookup')
@@ -150,7 +150,25 @@ class Model(object):
                 if self.use_negsampling:
                     self.loss += self.aux_loss
                 tf.summary.scalar('loss', self.loss)
-                self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
+                # self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
+
+                # self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
+                self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
+
+                grads = tf.gradients(self.loss, tf.trainable_variables())
+                grads = list(zip(grads, tf.trainable_variables()))
+
+                # weight decay
+                # grads = [(grad + (0.00005 * var), var)
+                #          for grad, var in grads]
+
+                # clip gradients
+                grads = [(tf.clip_by_value(grad, -1., 1.), var)
+                         for grad, var in grads]
+
+                # Op to update all variables according to their gradient
+                self.apply_grads = self.optimizer.apply_gradients(grads_and_vars=grads)
+
 
                 # Accuracy metric
                 self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(self.y_hat), self.target_ph), self.model_dtype))
@@ -197,12 +215,12 @@ class Model(object):
     def build_train_ipu(self):
         self.build_embedding_ipu()
         self.build_graph()
-        return self.loss, self.accuracy, 0
+        return self.loss, self.accuracy, self.aux_loss, self.apply_grads
 
     def train(self, sess, inps, ipu_output=None):
         if not ipu_output:
             if self.use_negsampling:
-                loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.optimizer], feed_dict={
+                loss, accuracy, aux_loss, _ = sess.run([self.loss, self.accuracy, self.aux_loss, self.apply_grads], feed_dict={
                     self.uid_batch_ph: inps[0],
                     self.mid_batch_ph: inps[1],
                     self.cat_batch_ph: inps[2],
@@ -216,7 +234,7 @@ class Model(object):
                     self.noclk_cat_batch_ph: inps[10],
                 })
                 return loss, accuracy, aux_loss
-            loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.optimizer], feed_dict={
+            loss, accuracy, _ = sess.run([self.loss, self.accuracy, self.apply_grads], feed_dict={
                 self.uid_batch_ph: inps[0],
                 self.mid_batch_ph: inps[1],
                 self.cat_batch_ph: inps[2],
@@ -470,6 +488,8 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
 
         with tf.variable_scope("dien", custom_getter=dtype_getter, dtype=self.model_dtype):
             # RNN layer(-s)
+            print (self.item_his_eb)
+
             with tf.name_scope('rnn_1'):
                 rnn_outputs, _ = dynamic_rnn(GRUCell(self.HIDDEN_SIZE), inputs=self.item_his_eb, max_iteration = self.options.max_rnn_while_loops,
                                              sequence_length=self.seq_len_ph, dtype=self.model_dtype,
@@ -495,7 +515,8 @@ class Model_DIN_V2_Gru_Vec_attGru_Neg(Model):
                 tf.summary.histogram('GRU2_Final_State', final_state2)
 
             inp = tf.concat([self.uid_batch_embedded, self.item_eb, self.item_his_eb_sum, self.item_eb * self.item_his_eb_sum, final_state2], 1)
-            self.build_fcn_net(inp, use_dice=True)
+            # self.build_fcn_net(inp, use_dice=True)
+            self.build_fcn_net(inp, use_dice=False)
 
 
 class Model_DIN_V2_Gru_Vec_attGru(Model):

@@ -29,7 +29,8 @@ HIDDEN_SIZE = 18 * 2
 ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 
-TOTAL_TRAIN_SIZE = 512000
+#TOTAL_TRAIN_SIZE = 512000
+TOTAL_TRAIN_SIZE = 4000
 
 NUID = 543060
 NMID = 367983
@@ -39,24 +40,30 @@ NCAT = 1601
 def prepare_data(input, target, maxlen = None, return_neg = False):
     # x: a list of sentences
     lengths_x = [len(s[4]) for s in input]
+    lengths_x_tmp = [len(s[4]) for s in input]
     seqs_mid = [inp[3] for inp in input]
+    seqs_mid_tmp = [inp[3] for inp in input]
     seqs_cat = [inp[4] for inp in input]
     noclk_seqs_mid = [inp[5] for inp in input]
     noclk_seqs_cat = [inp[6] for inp in input]
 
     if maxlen is not None:
         new_seqs_mid = []
+        new_seqs_mid_tmp = []
         new_seqs_cat = []
         new_noclk_seqs_mid = []
         new_noclk_seqs_cat = []
         new_lengths_x = []
+        new_lengths_x_tmp = []
         for l_x, inp in zip(lengths_x, input):
             if l_x > maxlen:
                 new_seqs_mid.append(inp[3][l_x - maxlen:])
+                new_seqs_mid_tmp.append(inp[3][l_x - maxlen:])
                 new_seqs_cat.append(inp[4][l_x - maxlen:])
                 new_noclk_seqs_mid.append(inp[5][l_x - maxlen:])
                 new_noclk_seqs_cat.append(inp[6][l_x - maxlen:])
                 new_lengths_x.append(maxlen)
+                new_lengths_x_tmp.append(maxlen)
             else:
                 list_1 = [0] * (maxlen - len(inp[3]))
                 new_seqs_mid.append(inp[3] + list_1)
@@ -74,10 +81,15 @@ def prepare_data(input, target, maxlen = None, return_neg = False):
                     list_4.append([0, 0, 0, 0, 0])
                 new_noclk_seqs_cat.append(inp[6] + list_4)
 
+                new_seqs_mid_tmp.append(inp[3])
+
                 new_lengths_x.append(maxlen)
+                new_lengths_x_tmp.append(l_x)
 
         lengths_x = new_lengths_x
+        lengths_x_tmp = new_lengths_x_tmp
         seqs_mid = new_seqs_mid
+        seqs_mid_tmp = new_seqs_mid_tmp
         seqs_cat = new_seqs_cat
         noclk_seqs_mid = new_noclk_seqs_mid
         noclk_seqs_cat = new_noclk_seqs_cat
@@ -85,9 +97,15 @@ def prepare_data(input, target, maxlen = None, return_neg = False):
         if len(lengths_x) < 1:
             return None, None, None, None
 
+
+    # print(lengths_x)
+    # print(lengths_x_tmp)
+
     n_samples = len(seqs_mid)
     maxlen_x = numpy.max(lengths_x)
     neg_samples = len(noclk_seqs_mid[0][0])
+
+    # print('maxlen_x is %4d' % maxlen_x)
 
     mid_his = numpy.zeros((n_samples, maxlen_x)).astype('int32')
     cat_his = numpy.zeros((n_samples, maxlen_x)).astype('int32')
@@ -101,12 +119,22 @@ def prepare_data(input, target, maxlen = None, return_neg = False):
     else:
         raise ValueError("Invalid model data type: %s" % args.data_type)
     mid_mask = numpy.zeros((n_samples, maxlen_x)).astype(data_type)
+    
+    # for idx, mask in enumerate(mid_mask):
+    #     print(idx)
+    #     print(mask)
+
     for idx, [s_x, s_y, no_sx, no_sy] in enumerate(zip(seqs_mid, seqs_cat, noclk_seqs_mid, noclk_seqs_cat)):
-        mid_mask[idx, :lengths_x[idx]] = 1.
+        # mid_mask[idx, :lengths_x[idx]] = 1.
+        mid_mask[idx, :lengths_x_tmp[idx]] = 1.
         mid_his[idx, :lengths_x[idx]] = s_x
         cat_his[idx, :lengths_x[idx]] = s_y
         noclk_mid_his[idx, :lengths_x[idx], :] = no_sx
         noclk_cat_his[idx, :lengths_x[idx], :] = no_sy
+
+    # for idx, mask in enumerate(mid_mask):
+    #     print(idx)
+    #     print(mask)
 
     uids = numpy.array([inp[0] for inp in input])
     mids = numpy.array([inp[1] for inp in input])
@@ -247,15 +275,34 @@ def train(
         sys.stdout.flush()
 
         iter = 0
-        lr = 0.001
-        train_size = 0
+        lr = 0.000003
+        # train_size = 0
         approximate_accelerator_time = 0
-        for itr in range(1):
+        for itr in range(2000):
+            print ("iteration : %0d" % itr)
+            train_size = 0
             loss_sum = 0.0
             accuracy_sum = 0.
             aux_loss_sum = 0.
-            for src, tgt in train_data:
+            idx = 0
+            train_data_tmp = DataIterator(train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
+            for src, tgt in train_data_tmp:
                 uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(src, tgt, maxlen, return_neg=True)
+                # print (uids)
+                # print (mids)
+                # print (cats)
+                # print (mid_his)
+                # print (cat_his)
+                # print (mid_mask)
+                # print (target)
+                # print (sl)
+                # print (noclk_mids)
+                # print (noclk_cats)
+
+                # if (idx == 4):
+                #     break
+                # break
+
                 start_time = time.time()
                 loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats], ipu_output=batch)
                 end_time = time.time()
@@ -275,16 +322,17 @@ def train(
                     loss_sum = 0.0
                     accuracy_sum = 0.0
                     aux_loss_sum = 0.0
-                if (iter % save_iter) == 0:
-                    print('save model iter: %d' % (iter))
-                    model.save(sess, model_path+"--"+str(iter))
+                # if (iter % save_iter) == 0:
+                #     print('save model iter: %d' % (iter))
+                #     model.save(sess, model_path+"--"+str(iter))
+
                 if train_size >= TOTAL_TRAIN_SIZE:
                     break
 
-            lr *= 0.5
+            lr *= 0.95
 
-            if train_size >= TOTAL_TRAIN_SIZE:
-                break
+            #if train_size >= TOTAL_TRAIN_SIZE:
+            #    break
 
         print("iter: %d" % iter)
         print("Total train_size : %d" % train_size)
