@@ -35,7 +35,7 @@ class DataIterator:
                  maxlen=100,
                  skip_empty=False,
                  shuffle_each_epoch=False,
-                 sort_by_length=True,
+                 sort_by_length=False,
                  max_batch_size=20,
                  minlen=None):
         if shuffle_each_epoch:

@@ -14,14 +14,18 @@ from tensorflow.python.ipu import utils
 from tensorflow.python.ipu import ipu_compiler
 from tensorflow.python.ipu.scopes import ipu_scope
 
+from gc_profile import save_tf_report
+from tensorflow.compiler.plugin.poplar.ops import gen_ipu_ops
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", type=str, default='train', help="mode, train or test")
 parser.add_argument("--model", type=str, default='DIEN', help="model")
 parser.add_argument("--seed", type=int, default=3, help="seed value")
-parser.add_argument("--batch_size", type=int, default=128, help="batch size")
+parser.add_argument("--batch_size", type=int, default=4, help="batch size")
 parser.add_argument("--data_type", type=str, default='FP32', help="data type: FP32 or FP16")
 parser.add_argument("--max_len", type=int, default=100, help="max seq len")
 parser.add_argument("--num_accelerators", type=int, default=1, help="number of accelerators used for training")
+parser.add_argument('--profiling', default=False, help = "profiling")
 args = parser.parse_args()
 
 EMBEDDING_DIM = 18
@@ -29,8 +33,7 @@ HIDDEN_SIZE = 18 * 2
 ATTENTION_SIZE = 18 * 2
 best_auc = 0.0
 
-#TOTAL_TRAIN_SIZE = 512000
-TOTAL_TRAIN_SIZE = 4000
+TOTAL_TRAIN_SIZE = 512000
 
 NUID = 543060
 NMID = 367983
@@ -119,7 +122,7 @@ def prepare_data(input, target, maxlen = None, return_neg = False):
     else:
         raise ValueError("Invalid model data type: %s" % args.data_type)
     mid_mask = numpy.zeros((n_samples, maxlen_x)).astype(data_type)
-    
+
     # for idx, mask in enumerate(mid_mask):
     #     print(idx)
     #     print(mask)
@@ -225,7 +228,7 @@ def train(
         use_ipu=True,
 ):
     class RunningOptions:
-        def __init__(self,batch_size = 4, sequence_length = 100, negative_samples = 5, max_iteration = 10):
+        def __init__(self, batch_size = 4, sequence_length = 100, negative_samples = 5, max_iteration = 10):
             self.batch_size = batch_size
             self.sequence_length = sequence_length
             self.negative_samples = negative_samples
@@ -262,7 +265,12 @@ def train(
         #         print("global variable: ", var)
         # model = Model_DNN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE)
 
-        ipu_options = utils.create_ipu_config(profiling=False, profile_execution=False)
+        # os.environ["TF_POPLAR_FLAGS"] = "--use_ipu_model"
+        if args.profiling:
+            ipu_options = utils.create_ipu_config(profiling=True, profile_execution=True)
+        else:
+            ipu_options = utils.create_ipu_config(profiling=False, profile_execution=False)
+
         ipu_options = utils.auto_select_ipus(ipu_options, [1])
 
         utils.configure_ipu_system(ipu_options)
@@ -270,75 +278,88 @@ def train(
 
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
+
+        if args.profiling:
+            with tf.device('cpu'):
+                report = gen_ipu_ops.ipu_event_trace()
+
         sys.stdout.flush()
         # print('                                                                                      test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f ---- eval_time: %.3f ---- num_iters: %d' % eval(sess, test_data, model, best_model_path))
         sys.stdout.flush()
 
-        iter = 0
-        lr = 0.000003
-        # train_size = 0
-        approximate_accelerator_time = 0
-        for itr in range(2000):
-            print ("iteration : %0d" % itr)
-            train_size = 0
-            loss_sum = 0.0
-            accuracy_sum = 0.
-            aux_loss_sum = 0.
-            idx = 0
+
+        if args.profiling:
+            lr = 0.0003
             train_data_tmp = DataIterator(train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
             for src, tgt in train_data_tmp:
-                uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(src, tgt, maxlen, return_neg=True)
-                # print (uids)
-                # print (mids)
-                # print (cats)
-                # print (mid_his)
-                # print (cat_his)
-                # print (mid_mask)
-                # print (target)
-                # print (sl)
-                # print (noclk_mids)
-                # print (noclk_cats)
+                if (model_type == 'DIEN'):
+                    uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(src, tgt, maxlen, return_neg=True)
+                    loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_mids, noclk_cats], ipu_output=batch)
+                elif (model_type == 'DIN'):
+                    uids, mids, cats, mid_his, cat_his, mid_mask, target, sl = prepare_data(src, tgt, maxlen, return_neg=False)
+                    loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr], ipu_output=batch)
 
-                # if (idx == 4):
+                with tf.Session() as sess:
+                    summary = sess.run(report)
+                save_tf_report(summary)
+                break
+        else:
+            iter = 0
+            # lr = 0.0006
+            # lr = 0.002
+            # lr = 0.01
+            lr = 0.1
+            approximate_accelerator_time = 0
+            for itr in range(20):
+                print ("iteration : %0d" % itr)
+                train_size = 0
+                loss_sum = 0.0
+                accuracy_sum = 0.
+                aux_loss_sum = 0.
+                idx = 0
+                train_data_tmp = DataIterator(train_file, uid_voc, mid_voc, cat_voc, batch_size, maxlen, shuffle_each_epoch=False)
+                for src, tgt in train_data_tmp:
+                    uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats = prepare_data(src, tgt, maxlen, return_neg=True)
+
+                    start_time = time.time()
+                    if (model_type == 'DIEN'):
+                        loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats], ipu_output=batch)
+                    elif (model_type == 'DIN'):
+                        loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr], ipu_output=batch)
+                    end_time = time.time()
+                    # print("training time of one batch: %.3f" % (end_time - start_time))
+                    approximate_accelerator_time += end_time - start_time
+                    loss_sum += loss
+                    accuracy_sum += acc
+                    aux_loss_sum += aux_loss
+                    iter += 1
+                    train_size += batch_size
+                    sys.stdout.flush()
+                    if (iter % test_iter) == 0:
+                        # print("train_size: %d" % train_size)
+                        # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
+                        print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
+                              (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
+                        loss_sum = 0.0
+                        accuracy_sum = 0.0
+                        aux_loss_sum = 0.0
+                    # if (iter % save_iter) == 0:
+                    #     print('save model iter: %d' % (iter))
+                    #     model.save(sess, model_path+"--"+str(iter))
+
+                    if train_size >= TOTAL_TRAIN_SIZE:
+                        break
+
+                lr *= 0.5
+
+                # if train_size >= TOTAL_TRAIN_SIZE:
                 #     break
-                # break
 
-                start_time = time.time()
-                loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats], ipu_output=batch)
-                end_time = time.time()
-                # print("training time of one batch: %.3f" % (end_time - start_time))
-                approximate_accelerator_time += end_time - start_time
-                loss_sum += loss
-                accuracy_sum += acc
-                aux_loss_sum += aux_loss
-                iter += 1
-                train_size += batch_size
-                sys.stdout.flush()
-                if (iter % test_iter) == 0:
-                    # print("train_size: %d" % train_size)
-                    # print("approximate_accelerator_time: %.3f" % approximate_accelerator_time)
-                    print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- tran_aux_loss: %.4f' %
-                          (iter, loss_sum / test_iter, accuracy_sum / test_iter, aux_loss_sum / test_iter))
-                    loss_sum = 0.0
-                    accuracy_sum = 0.0
-                    aux_loss_sum = 0.0
-                # if (iter % save_iter) == 0:
-                #     print('save model iter: %d' % (iter))
-                #     model.save(sess, model_path+"--"+str(iter))
-
-                if train_size >= TOTAL_TRAIN_SIZE:
-                    break
-
-            lr *= 0.95
-
-            #if train_size >= TOTAL_TRAIN_SIZE:
-            #    break
-
-        print("iter: %d" % iter)
-        print("Total train_size : %d" % train_size)
-        print("Total batch_size : %d" % batch_size)
-        print("Approximate accelerator time in seconds is %.3f" % approximate_accelerator_time)
-        print("Approximate accelerator performance in recommendations/second is %.3f" % (float(TOTAL_TRAIN_SIZE)/float(approximate_accelerator_time)))
+            print("iter: %d" % iter)
+            print("Total train_size : %d" % train_size)
+            print("Total batch_size : %d" % batch_size)
+            print("Approximate accelerator time in seconds is %.3f" % approximate_accelerator_time)
+            print("Approximate accelerator performance in recommendations/second is %.3f" % (float(TOTAL_TRAIN_SIZE)/float(approximate_accelerator_time)))
 
 
 def test(

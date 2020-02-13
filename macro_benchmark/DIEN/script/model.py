@@ -9,6 +9,7 @@ from Dice import dice
 
 from tensorflow.python.ipu.ops.embedding_ops import embedding_lookup as ipu_embedding_lookup
 
+
 class Model(object):
     def __init__(self, run_options, n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE, ATTENTION_SIZE, data_type='FP32', use_negsampling = False):
         if data_type == 'FP32':
@@ -22,7 +23,7 @@ class Model(object):
         self.EMBEDDING_DIM = EMBEDDING_DIM
         self.HIDDEN_SIZE = HIDDEN_SIZE
         self.ATTENTION_SIZE = ATTENTION_SIZE
-        #self.aux_loss = 0
+        self.aux_loss = 0
         self.lr = tf.placeholder(tf.float32)
         self.n_uid = n_uid
         self.n_mid = n_mid
@@ -151,20 +152,20 @@ class Model(object):
                     self.loss += self.aux_loss
                 tf.summary.scalar('loss', self.loss)
                 # self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
-
                 # self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr).minimize(self.loss)
+
+                # self.optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+                # self.optimizer = tf.train.MomentumOptimizer(self.lr, 0.9)
                 self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.lr)
 
                 grads = tf.gradients(self.loss, tf.trainable_variables())
                 grads = list(zip(grads, tf.trainable_variables()))
 
                 # weight decay
-                # grads = [(grad + (0.00005 * var), var)
-                #          for grad, var in grads]
+                grads = [(grad + (0.00005 * var), var) for grad, var in grads]
 
                 # clip gradients
-                grads = [(tf.clip_by_value(grad, -1., 1.), var)
-                         for grad, var in grads]
+                grads = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in grads]
 
                 # Op to update all variables according to their gradient
                 self.apply_grads = self.optimizer.apply_gradients(grads_and_vars=grads)
